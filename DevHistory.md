@@ -144,6 +144,27 @@ mount -o remount,suid,dev,bind /data/ubuntu
 
 ---
 
+## 坑 9（最危险）：pkill -u 跨 chroot 边界，杀 Android system 导致手机重启
+
+**现象**：在 chroot 内或宿主层执行 `pkill -u lmxxf` 后，**整个手机（Android）重启**，adb 报 `device not found`。
+
+**根因**：两个事实叠加——
+1. **chroot 不隔离 PID 命名空间**。chroot 只换根目录，不换 PID 空间；而且本项目把宿主的 `/proc` bind 进了 chroot。所以 chroot 内的进程能看到**宿主所有 PID**，`pkill` 在 chroot 内一样能杀到宿主进程。
+2. **uid 撞车**。`adduser` 建的第一个普通用户默认 **uid=1000**，而 **Android 的 `system` 用户也是 uid=1000**（system_server 等核心服务）。`pkill -u 1000` / `pkill -u lmxxf` 按 uid 杀，把 Android system_server 一起杀了 → 手机重启。
+
+**判据**：`id -u lmxxf` = 1000，且 Android system 也是 1000 → 任何针对 uid 1000 的 pkill 都危险。用 `check-uid.sh` 确认。
+
+**规则（务必遵守）**：
+- **绝不用 `pkill -u <uid>` 或 `pkill -u <用户名>`**（无论宿主还是 chroot 内）。
+- **绝不用 `pkill <裸进程名>`** 杀 dbus-daemon 等宿主也有的进程。
+- **安全杀法**：① `pkill -f "精确命令行"`（如 `pkill -f "Xvfb :1"`，Android 没有这种命令行，不会误伤）；② 宿主层批量清理用 `readlink /proc/PID/root`，只杀 root 指向 `/data/ubuntu` 的进程（见 `restart-clean.sh`）。
+
+**已修**：所有脚本的 `pkill -u` 改为 `pkill -f "命令行"`；`restart-clean.sh` 改为 readlink 精确判断。
+
+> 彻底规避：建用户时指定一个 Android 不用的高 uid（如 `adduser --uid 11000`），uid 不撞就不会跨界误杀。本项目脚本默认没改 uid（兼容已建用户），靠"只用 -f 不用 -u"规避。
+
+---
+
 ## Firefox 相关
 
 - **firefox-esr 在 ports 源没有**：arm64 的 Firefox 走 snap，chroot 里没 snapd 跑不了。解法：用 **Mozilla 官方 arm64 tarball**（`os=linux64-aarch64`，注意是这个 os 参数，`linux-aarch64`/`linux-arm64` 都 404）。

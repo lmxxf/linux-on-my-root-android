@@ -60,10 +60,13 @@ RESOLUTION=\${1:-1920x1080}
 DISPLAY_NUM=:1
 VNC_PORT=5900
 
-pkill -u $USERNAME -f "Xvfb \${DISPLAY_NUM}" 2>/dev/null
-pkill -u $USERNAME -f "x11vnc.*\${DISPLAY_NUM}" 2>/dev/null
-pkill -u $USERNAME -f xfwm4 2>/dev/null
-pkill -u $USERNAME -f fcitx5 2>/dev/null
+# 只按命令行精确匹配杀（-f），不用 -u <uid>。
+# 原因：chroot 不隔离 PID 命名空间，/proc 是宿主的，pkill -u <uid> 会杀到
+# 宿主同 uid 进程；lmxxf uid 常=1000，撞 Android system，会导致手机重启。
+pkill -f "Xvfb \${DISPLAY_NUM}" 2>/dev/null
+pkill -f "x11vnc.*\${DISPLAY_NUM}" 2>/dev/null
+pkill -f "xfwm4 --display \${DISPLAY_NUM}" 2>/dev/null
+pkill -f "fcitx5 -d" 2>/dev/null
 sleep 1
 
 mkdir -p /run/dbus
@@ -109,7 +112,7 @@ info "  设置密码（必须，SSH/sudo 登录用）："
 info "    passwd $USERNAME"
 info ""
 info "  重启桌面（以 $USERNAME 身份运行）："
-info "    bash /root/stop-vnc.sh 2>/dev/null; pkill -u $USERNAME Xvfb 2>/dev/null"
+info "    pkill -f 'Xvfb :1' 2>/dev/null; bash /root/start-services.sh 1920x1080"
 info "    bash /root/start-services.sh 1920x1080"
 info ""
 info "  之后：SSH 用 $USERNAME 登录，桌面也是 $USERNAME，要 root 用 sudo"
