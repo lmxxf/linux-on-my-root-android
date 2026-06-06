@@ -17,7 +17,7 @@
 | 安装位置 | `/data/ubuntu` |
 | 桌面 | XFCE4 + Xvfb + x11vnc |
 | 浏览器 | Firefox（Mozilla 官方 arm64 tarball，不走 snap） |
-| 输入法 | fcitx5 + 拼音（Ctrl+Space 切换） |
+| 输入法 | fcitx5 + 拼音（手机 VNC 推荐用桌面「中英切换」图标，见下） |
 
 > **为什么是 chroot 而不是虚拟机？** chroot 只替换用户态文件（rootfs），内核仍是 Android 的。程序发的是 Linux syscall，Android 内核原生听得懂，所以零开销。代价是必须 root（chroot 系统调用需要权限）。
 >
@@ -105,7 +105,7 @@ SSH: ssh root@127.0.0.1 -p 2222
 
 > **手机本机 VNC**：手机上的 VNC 客户端（RealVNC / AVNC / bVNC）直接连 `127.0.0.1:5900` 即可，不用端口转发。
 >
-> **中文输入**：桌面里任意输入框按 **Ctrl+Space** 切换中/英。手机 VNC 客户端用扩展键盘点 Ctrl 再点空格。
+> **中文输入**：桌面里切换中/英。手机 VNC 上 `Ctrl+Space` 组合键不好发，**推荐用桌面「中英切换」图标**（`add-im-toggle-icon.sh` 生成，点一下切换），或终端 `fcitx5-remote -t`。
 
 **手动控制端口转发（PowerShell）：**
 
@@ -138,7 +138,7 @@ sh /data/local/tmp/ubuntu-enter.sh          # 挂载 + 进入 Ubuntu chroot
 bash /root/start-services.sh 1920x1080      # 启动 SSH(2222) + VNC 桌面
 ```
 
-然后**手机上的 VNC 客户端直接连 `127.0.0.1:5900`**（本机进程互通，不用端口转发），即可看到 Ubuntu 桌面。中文输入按 Ctrl+Space。
+然后**手机上的 VNC 客户端直接连 `127.0.0.1:5900`**（本机进程互通，不用端口转发），即可看到 Ubuntu 桌面。中文输入用桌面「中英切换」图标。
 
 **懒人别名**：在 Termux 的 `~/.bashrc` 里加一行，以后敲 `ulinux` 一下全起来：
 
@@ -221,6 +221,10 @@ adb shell "su -c 'sh /data/local/tmp/safe-clean-ubuntu.sh'"
 | `install-fcitx5.sh` | Ubuntu chroot 内 | 装 fcitx5 + 拼音引擎，配默认输入法，集成进 VNC 启动脚本 |
 | `fix-fcitx-env.sh` | Ubuntu chroot 内 | 修复输入法环境变量（`GTK/QT_IM_MODULE=fcitx`）：写入 `/etc/environment` + `/root/.xprofile`，重写 `start-vnc.sh`。**Ctrl+Space 不生效时跑它** |
 | `add-user.sh` | Ubuntu chroot 内 | 建普通用户 + sudo 权限 + 输入法环境，把 VNC 桌面切到该用户运行。用法 `bash /root/add-user.sh [用户名]`（默认 lmxxf）|
+| `fix-fcitx-user.sh` | Ubuntu chroot 内 | 给普通用户补全 fcitx5 配置（profile 含拼音 + 环境）。切到普通用户后没中文输入时跑它 |
+| `add-im-toggle-icon.sh` | Ubuntu chroot 内 | 在桌面放一个「中英切换」点击图标（调 `fcitx5-remote -t`）。手机 VNC 上比 Ctrl+Space 好用 |
+| `set-fcitx-hotkey.sh` | Ubuntu chroot 内 | 显式设 fcitx5 切换键（Ctrl+Space + 左 Shift 单键）。改前自动停 fcitx5 防回写 |
+| `restart-clean.sh` | Android root shell | 手机重启后一键重置：安全杀残留 chroot 进程 + 卸载 + 重挂 + 启动桌面。**重启后推荐用它** |
 | `enable-suid.sh` | Android root shell | 给 `/data/ubuntu` 开 suid（bind+remount 去 nosuid），让 sudo 可用。**sudo 报 nosuid 时跑它**（已防重复堆叠）|
 | `fix-suid-stack.sh` | Android root shell | 清理反复 remount 堆叠的多层 self-bind 挂载，重新正确挂一次 |
 | `safe-clean-ubuntu.sh` | Android root shell | 安全卸载所有挂载点后删除 `/data/ubuntu`（卸载用，防误删宿主 /sys /dev） |
@@ -272,8 +276,12 @@ KernelSU/Magisk 里 root 没授权给 adb shell。打开管理器 app，给 **Sh
 **Q: apt 报 `Permission denied`？**
 多半是挂 VPN 时镜像源对境外 IP 返 403。本项目已默认用官方 `ports.ubuntu.com` 源。若仍有问题，确认设备能访问 `ports.ubuntu.com`。
 
-**Q: Ctrl+Space 切不出中文？**
-跑 `fix-fcitx-env.sh`，然后重启桌面（`stop-vnc.sh` + `start-services.sh`），手机 VNC 重连。
+**Q: 切不出中文 / Ctrl+Space 没反应？**
+手机 VNC 发 `Ctrl+Space` 组合键不可靠，**推荐用桌面「中英切换」图标**（`add-im-toggle-icon.sh` 生成）或终端 `fcitx5-remote -t`。
+若切到普通用户后完全没输入法：先确认 fcitx5 在跑（`fcitx5-remote` 不报错），没跑就 `fcitx5 -d --replace`；profile 缺拼音跑 `fix-fcitx-user.sh`；环境变量问题跑 `fix-fcitx-env.sh`。改 fcitx 配置前务必先停 fcitx5，否则被运行中的进程回写覆盖。
+
+**Q: pkill 之后手机重启了？**
+**绝不要用 `pkill -u 用户名`**！chroot 不隔离 PID，普通用户 uid 常=1000 撞 Android system，会杀 system_server 导致重启。杀进程用 `pkill -f "Xvfb :1"` 这种命令行匹配。详见 DevHistory 坑 9。
 
 **Q: Firefox 启动崩溃？**
 chroot 下必须关沙箱，启动器已自动加 `--no-sandbox`。若缺库，按报错 `apt install` 对应 `lib*`。
