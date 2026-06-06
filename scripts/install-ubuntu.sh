@@ -112,7 +112,8 @@ UBUNTU=/data/ubuntu
 
 # Android 的 /data 默认 nosuid，会让 chroot 内 sudo/su 等 setuid 程序失效。
 # bind /data/ubuntu 到自身建立独立挂载点，再 remount 去掉 nosuid，让 sudo 能用。
-if ! grep -q " $UBUNTU $UBUNTU" /proc/mounts 2>/dev/null && ! mountpoint -q "$UBUNTU"; then
+# 防重复堆叠：已是独立挂载点就跳过 bind。
+if ! mountpoint -q "$UBUNTU" 2>/dev/null; then
     mount --bind $UBUNTU $UBUNTU 2>/dev/null
     mount -o remount,suid,dev,bind $UBUNTU 2>/dev/null
 fi
