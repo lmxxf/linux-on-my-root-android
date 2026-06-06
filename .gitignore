@@ -1,0 +1,11 @@
+# 大文件：用户自行下载（见 README“准备文件”）
+*.tar.gz
+*.tar.xz
+ubuntu-base-*.tar.*
+firefox-*.tar.*
+alpine-minirootfs-*.tar.*
+
+# 临时/系统
+*.swp
+*~
+.DS_Store
