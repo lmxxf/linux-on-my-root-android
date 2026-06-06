@@ -118,6 +118,49 @@ adb forward --remove-all        # 取消全部
 
 ---
 
+## 重启手机后如何启动
+
+chroot **不会开机自启**。手机重启后，`/data/ubuntu` 里的数据都还在（不会丢），但挂载点和桌面/SSH 进程没了，需要手动重新启动一次。
+
+数据持久、进程不持久 —— 重启后只是"再点一次开关"，装好的软件、配置、文件都在。
+
+### 方式一：手机本机用 Termux 启动（推荐，脱离 PC）
+
+这是手机端的主要用法 —— 不需要 PC、不需要 adb，手机自己就能起 Linux。
+
+**前置（一次性）**：在 KernelSU app → 超级用户 → 给 **Termux** 授权 root。
+
+在 Termux 里执行：
+
+```bash
+su                                          # 首次会弹 KernelSU 授权框，点允许
+sh /data/local/tmp/ubuntu-enter.sh          # 挂载 + 进入 Ubuntu chroot
+bash /root/start-services.sh 1920x1080      # 启动 SSH(2222) + VNC 桌面
+```
+
+然后**手机上的 VNC 客户端直接连 `127.0.0.1:5900`**（本机进程互通，不用端口转发），即可看到 Ubuntu 桌面。中文输入按 Ctrl+Space。
+
+**懒人别名**：在 Termux 的 `~/.bashrc` 里加一行，以后敲 `ulinux` 一下全起来：
+
+```bash
+echo 'alias ulinux="su -c \"sh /data/local/tmp/ubuntu-enter.sh && bash /root/start-services.sh 1920x1080\""' >> ~/.bashrc
+```
+
+### 方式二：PC 端用 adb 启动
+
+```bash
+adb shell
+su
+sh /data/local/tmp/ubuntu-enter.sh
+bash /root/start-services.sh 1920x1080
+```
+
+PC 端再配端口转发（`adb forward`，见上一节），VNC 连 `127.0.0.1:5900`。
+
+> **想开机全自动？** KernelSU 支持开机脚本：把启动命令放进 `/data/adb/service.d/` 下的脚本，开机后 KernelSU 以 root 自动跑。本项目默认不做自启（手机端按需手动启动更可控），需要的话自行添加。
+
+---
+
 ## 卸载
 
 > **绝对不要直接 `rm -rf /data/ubuntu`**：挂载点（/proc /sys /dev）没卸载会顺着 bind mount 删到宿主系统的 /sys 和 /dev！用安全清理脚本：
