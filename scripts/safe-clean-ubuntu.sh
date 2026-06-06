@@ -12,6 +12,8 @@ umount "$UBUNTU/dev/pts" 2>&1 && echo "umount dev/pts OK" || echo "dev/pts: 跳�
 umount "$UBUNTU/dev"     2>&1 && echo "umount dev OK"     || echo "dev: 跳过"
 umount "$UBUNTU/proc"    2>&1 && echo "umount proc OK"    || echo "proc: 跳过"
 umount "$UBUNTU/sys"     2>&1 && echo "umount sys OK"     || echo "sys: 跳过"
+# self-bind 挂载点（去 nosuid 用的，最后卸）
+umount "$UBUNTU"         2>&1 && echo "umount self-bind OK" || echo "self-bind: 跳过"
 
 for m in $(grep "$UBUNTU" /proc/mounts | cut -d' ' -f2 | sort -r); do
     echo "残留挂载 $m,强制 lazy umount"

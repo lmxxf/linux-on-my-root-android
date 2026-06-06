@@ -110,6 +110,13 @@ UBUNTU=/data/ubuntu
 [ "$(id -u)" -eq 0 ] || { echo "[!] 需要 root: adb shell \"su -c 'sh /data/local/tmp/ubuntu-enter.sh'\""; exit 1; }
 [ -f "$UBUNTU/etc/os-release" ] || { echo "[!] Ubuntu 未安装，先运行 install-ubuntu.sh"; exit 1; }
 
+# Android 的 /data 默认 nosuid，会让 chroot 内 sudo/su 等 setuid 程序失效。
+# bind /data/ubuntu 到自身建立独立挂载点，再 remount 去掉 nosuid，让 sudo 能用。
+if ! grep -q " $UBUNTU $UBUNTU" /proc/mounts 2>/dev/null && ! mountpoint -q "$UBUNTU"; then
+    mount --bind $UBUNTU $UBUNTU 2>/dev/null
+    mount -o remount,suid,dev,bind $UBUNTU 2>/dev/null
+fi
+
 mkdir -p $UBUNTU/dev/pts
 mountpoint -q $UBUNTU/proc    || mount -t proc proc $UBUNTU/proc
 mountpoint -q $UBUNTU/sys     || mount -t sysfs sysfs $UBUNTU/sys

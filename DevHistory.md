@@ -118,6 +118,32 @@ adb shell "su -c 'cp /data/local/tmp/xxx.sh /data/ubuntu/root/'"
 
 ---
 
+## 坑 8：sudo 报 nosuid + 反复 remount 堆叠几十层挂载
+
+**现象 1**：建了普通用户后 `sudo whoami` 报
+`sudo: effective uid is not 0, is /usr/bin/sudo on a file system with the 'nosuid' option set?`
+
+**根因**：Android 的 `/data` 默认挂 **`nosuid`**，内核忽略所有 setuid 位。sudo/su 靠 setuid 提权，被 nosuid 废掉。Ubuntu 装在 `/data/ubuntu`，整个文件系统继承 nosuid。
+
+**解法**：bind `/data/ubuntu` 到自身建立独立挂载点，再 remount 去掉 nosuid：
+```sh
+mount --bind /data/ubuntu /data/ubuntu
+mount -o remount,suid,dev,bind /data/ubuntu
+```
+本项目实测 KernelSU 设备**允许**这样 remount（不是所有设备都行）。已集成进 `ubuntu-enter.sh`，每次进 chroot 自动做。
+
+**现象 2（排查中踩的雷）**：remount 后 sudo **还是报 nosuid**。
+**根因**：① remount 在 chroot 进程**已存在**之后做的——已进入的 chroot 看到的是进入那一刻的挂载视图，看不到后来的 remount。② `mount --bind` 被**重复执行十几次**，堆出十几层 self-bind 挂载，chroot 看到的是底层那个还带 nosuid 的。
+**判据**：`grep ' /data/ubuntu ' /proc/mounts` 出现多行 = 堆叠了。
+**解法**：
+- remount 必须在**进 chroot 之前**做，已存在的 chroot 会话要**退出后重进**才看得到。
+- 防堆叠：`mount --bind` 前先 `mountpoint -q /data/ubuntu` 判断，已是独立挂载点就只 remount，不再叠 bind。
+- 清理堆叠：循环 `umount /data/ubuntu` 直到 `mountpoint -q` 为假（见 `fix-suid-stack.sh`）。
+
+**相关脚本**：`enable-suid.sh`（打补丁开 suid，已防重复）、`fix-suid-stack.sh`（清理堆叠）、`add-user.sh`（建用户 + 桌面切普通用户）。
+
+---
+
 ## Firefox 相关
 
 - **firefox-esr 在 ports 源没有**：arm64 的 Firefox 走 snap，chroot 里没 snapd 跑不了。解法：用 **Mozilla 官方 arm64 tarball**（`os=linux64-aarch64`，注意是这个 os 参数，`linux-aarch64`/`linux-arm64` 都 404）。

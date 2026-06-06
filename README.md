@@ -161,6 +161,39 @@ PC 端再配端口转发（`adb forward`，见上一节），VNC 连 `127.0.0.1:
 
 ---
 
+## 创建普通用户（不用 root 干活）
+
+默认进 chroot 是 root。日常建议用普通用户，要权限时 `sudo`。`add-user.sh` 一步配好：建用户 + sudo 权限 + 输入法环境 + 把 VNC 桌面切到该用户运行。
+
+```powershell
+# PC 端推脚本
+adb push scripts\add-user.sh /data/local/tmp/add-user.sh
+adb shell "su -c 'cp /data/local/tmp/add-user.sh /data/ubuntu/root/'"
+```
+```bash
+# 进 Ubuntu 跑（用户名默认 lmxxf，可传参改）
+adb shell ; su ; sh /data/local/tmp/ubuntu-enter.sh
+bash /root/add-user.sh lmxxf
+passwd lmxxf          # 必须设密码（sudo / SSH 登录用）
+```
+
+之后 SSH 用 lmxxf 登录、VNC 桌面也是 lmxxf，要 root 用 `sudo`。
+
+### ⚠️ sudo 与 nosuid（重要）
+
+Android 的 `/data` 默认挂 **`nosuid`**，会让 chroot 内 **sudo/su 失效**（报 `effective uid is not 0 ... 'nosuid' option set`）。
+
+解决：把 `/data/ubuntu` bind 到自身再 remount 去掉 nosuid。**新版 `ubuntu-enter.sh` 已自动做这件事**（每次进 chroot 时）。若你的 enter 脚本是旧版（sudo 仍报 nosuid），跑一次补丁：
+
+```bash
+# 须在「退出所有 chroot 会话」后跑，且重新进 chroot 才生效
+adb shell "su -c 'sh /data/local/tmp/enable-suid.sh'"
+```
+
+> **注意**：remount 必须在进 chroot **之前**做；已经开着的 chroot 会话看不到，要退出后重进。不要反复跑 `mount --bind`（会堆叠几十层挂载），脚本已带防重复判断。挂载堆乱了用 `fix-suid-stack.sh` 清理。
+
+---
+
 ## 卸载
 
 > **绝对不要直接 `rm -rf /data/ubuntu`**：挂载点（/proc /sys /dev）没卸载会顺着 bind mount 删到宿主系统的 /sys 和 /dev！用安全清理脚本：
@@ -182,11 +215,14 @@ adb shell "su -c 'sh /data/local/tmp/safe-clean-ubuntu.sh'"
 
 | 脚本 | 在哪跑 | 功能 |
 |------|--------|------|
-| `install-ubuntu.sh` | Android root shell | 解压 Ubuntu base 到 `/data/ubuntu`，配官方源，挂载 /proc /sys /dev，apt 装基础工具（curl/htop/tmux/openssh-server/sudo/nano），生成入口脚本 `ubuntu-enter.sh` |
+| `install-ubuntu.sh` | Android root shell | 解压 Ubuntu base 到 `/data/ubuntu`，配官方源，bind+remount 去 nosuid，挂载 /proc /sys /dev，apt 装基础工具（curl/htop/tmux/openssh-server/sudo/nano），生成入口脚本 `ubuntu-enter.sh` |
 | `setup-desktop-ubuntu.sh` | Ubuntu chroot 内 | apt 装 XFCE4 + Xvfb + x11vnc + 中文字体，生成 `start-vnc.sh` / `stop-vnc.sh` / `start-services.sh` |
 | `install-firefox.sh` | Ubuntu chroot 内 | 装 Firefox 运行依赖库，解压官方 tarball 到 `/opt`，建启动器（chroot 必须 `--no-sandbox`）+ 桌面菜单项。需先把 `firefox-aarch64.tar.xz` 放到 `/root/` |
 | `install-fcitx5.sh` | Ubuntu chroot 内 | 装 fcitx5 + 拼音引擎，配默认输入法，集成进 VNC 启动脚本 |
 | `fix-fcitx-env.sh` | Ubuntu chroot 内 | 修复输入法环境变量（`GTK/QT_IM_MODULE=fcitx`）：写入 `/etc/environment` + `/root/.xprofile`，重写 `start-vnc.sh`。**Ctrl+Space 不生效时跑它** |
+| `add-user.sh` | Ubuntu chroot 内 | 建普通用户 + sudo 权限 + 输入法环境，把 VNC 桌面切到该用户运行。用法 `bash /root/add-user.sh [用户名]`（默认 lmxxf）|
+| `enable-suid.sh` | Android root shell | 给 `/data/ubuntu` 开 suid（bind+remount 去 nosuid），让 sudo 可用。**sudo 报 nosuid 时跑它**（已防重复堆叠）|
+| `fix-suid-stack.sh` | Android root shell | 清理反复 remount 堆叠的多层 self-bind 挂载，重新正确挂一次 |
 | `safe-clean-ubuntu.sh` | Android root shell | 安全卸载所有挂载点后删除 `/data/ubuntu`（卸载用，防误删宿主 /sys /dev） |
 
 **单独跑 chroot 内脚本的通用方法**（脚本需先进到 Ubuntu 的 `/root/`）：
